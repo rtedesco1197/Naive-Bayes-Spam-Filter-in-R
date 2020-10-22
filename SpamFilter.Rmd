@@ -1,0 +1,178 @@
+---
+title: "BayesianSpamFilter"
+author: "Robert Tedesco"
+date: "9/26/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, Training for ham}
+library(quanteda)
+library(caret)
+library(quanteda.textmodels)
+#spam and ham data pulled from: http://openclassroom.stanford.edu/MainFolder/DocumentPage.php?course=MachineLearning&doc=exercises/ex6/ex6.html
+
+setwd("C:\\Users\\rober\\Documents\\R\\nonspam-train")
+nonspamtrain<-list.files()
+for (file in nonspamtrain){
+  if(!exists("nonspamtrainingset")){
+    nonspamtrainingset<-readLines(file,warn=F)
+  }
+  if (exists("nonspamtrainingset")){
+    tempnonspamtrainingset<-readLines(file,warn=F)
+    nonspamtrainingset<-rbind(nonspamtrainingset,tempnonspamtrainingset)
+    rm(tempnonspamtrainingset)
+  }
+}
+label1<-rep("ham",351)
+nonspamtrainingset<-cbind(nonspamtrainingset,label1)
+```
+
+```{r setup1, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "C:\\Users\\rober\\Documents\\R\\spam-train")
+```
+
+```{r, Training for spam}
+spamtrain<-list.files()
+for (file in spamtrain){
+  if(!exists("spamtrainingset")){
+    spamtrainingset<-readLines(file,warn=F)
+  }
+  if (exists("spamtrainingset")){
+    tempspamtrainingset<-readLines(file,warn=F)
+    spamtrainingset<-rbind(spamtrainingset,tempspamtrainingset)
+    rm(tempspamtrainingset)
+  }
+}
+label2<-rep("spam",351)
+spamtrainingset<-cbind(spamtrainingset,label2)
+```
+```{r setup2, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "C:\\Users\\rober\\Documents\\R\\spam-test")
+```
+
+```{r Testing for spam}
+
+spamtest<-list.files()
+for (file in spamtest){
+  if(!exists("spamtestingset")){
+    spamtestingset<-readLines(file,warn=F)
+  }
+  if (exists("spamtestingset")){
+    tempspamtestingset<-readLines(file,warn=F)
+    spamtestingset<-rbind(spamtestingset,tempspamtestingset)
+    rm(tempspamtestingset)
+  }
+}
+label3<-rep("spam",131)
+spamtestingset<-cbind(spamtestingset,label3)
+```
+
+```{r setup3, include=FALSE, echo=FALSE}
+require("knitr")
+opts_knit$set(root.dir = "C:\\Users\\rober\\Documents\\R\\nonspam-test")
+```
+
+```{r, "Testing for nonspam"}
+nonspamtest<-list.files()
+for (file in nonspamtest){
+  if(!exists("nonspamtestingset")){
+    nonspamtestingset<-readLines(file,warn=F)
+  }
+  if (exists("nonspamtestingset")){
+    tempnonspamtestingset<-readLines(file,warn=F)
+    nonspamtestingset<-rbind(nonspamtestingset,tempnonspamtestingset)
+    rm(tempnonspamtestingset)
+  }
+}
+label4<-rep("ham",131)
+nonspamtestingset<-cbind(nonspamtestingset,label4)
+```
+
+```{r "Graphs"}
+#Formatting training set with Quanteda: turning vector of emails into list of words with the class attached.
+library(readtext)
+library(RColorBrewer)
+trainingset<-rbind(nonspamtrainingset,spamtrainingset)
+trainingset<-as.data.frame(trainingset)
+labels<-c(label1,label2)
+names(trainingset)<-c("message","type")
+table(trainingset$type)
+msg.corpus<-corpus(trainingset$message)
+docvars(msg.corpus,"type")<-trainingset$type
+
+
+#Wordcloud plot for Ham
+spam.plot<-corpus_subset(msg.corpus, type=="spam")
+spam.plot<-dfm(spam.plot, tolower = TRUE, remove_punct = TRUE, remove_twitter = TRUE, remove_numbers = TRUE, remove=stopwords("SMART"))
+spam.col <- brewer.pal(10, "BrBG")  
+textplot_wordcloud(spam.plot, min.freq = 16, color = spam.col)  
+title("Spam Wordcloud", col.main = "grey14")
+
+#Wordcloud plot for Ham
+ham.plot<-corpus_subset(msg.corpus,type=="ham")
+ham.plot<-dfm(ham.plot,tolower = TRUE, remove_punct = TRUE, remove_twitter = TRUE, remove_numbers = TRUE,remove=c("gt", "lt", stopwords("SMART")))
+ham.col=brewer.pal(10, "YlOrRd")  
+textplot_wordcloud(ham.plot,min.freq=50,colors=ham.col,fixed.asp=TRUE)
+title("Ham Wordcloud",col.main = "grey14")
+```
+
+
+
+
+```{r Building classifier}
+
+
+#Formatting testing set with Quanteda: combining vector emails into list of words
+testingset<-rbind(spamtestingset,nonspamtestingset)
+testingset<-as.data.frame(testingset)
+labels<-c(label3,label4)
+names(testingset)<-c("message","type")
+table(testingset$type)
+test.corpus<-corpus(testingset$message)
+docvars(test.corpus,"type")<-testingset$type
+msg.dfm <- dfm(test.corpus, tolower = TRUE) 
+
+#generating document freq matrix for testing set
+msg.dfm <- dfm_trim(msg.dfm, min_termfreq = 5, min_docfreq = 3)  
+msg.dfm <- dfm_weight(msg.dfm)
+msg.dfm.test<-msg.dfm
+
+
+#generating document freq matrix for training set
+msg.dfm <- dfm(msg.corpus, tolower = TRUE)  
+msg.dfm <- dfm_trim(msg.dfm, min_termfreq = 5, min_docfreq = 3)  
+msg.dfm <- dfm_weight(msg.dfm) 
+head(msg.dfm)
+msg.dfm.train<-msg.dfm
+
+#Naive Bayes Spam Filter!
+nb.classifier<-textmodel_nb(msg.dfm.train,trainingset[,2])
+nb.classifier
+
+pred<-predict(nb.classifier,msg.dfm.test,force=T)
+
+table(predicted=pred,actual=testingset[,2])
+
+accuracy<-(126+129)/(262)
+accuracy*100
+
+#random forest, everything else,SVM,NN,Gam,Deep Learning, Log Reg, gradient boosting
+```
+
+
+```{r, include=FALSE}
+#SQL
+#find unanalyzed datasets
+#response driven sampling
+#Christa Gyle
+#Houston astros audio classification
+
+```
